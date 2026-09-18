@@ -1,0 +1,5 @@
+Nom : paul | Prenom : paul | Adresse : rf | Note 1 : -0.00 | Note 2 : 0.00
+Nom : rf | Prenom : ed | Adresse : zs | Note 1 : 0.00 | Note 2 : 0.00
+Nom : s | Prenom : e | Adresse : z | Note 1 : 0.00 | Note 2 : 0.00
+Nom : z | Prenom : a | Adresse : a | Note 1 : 0.00 | Note 2 : 0.00
+Nom : eee | Prenom : ed | Adresse : ed | Note 1 : 0.00 | Note 2 : 0.00
