@@ -1,19 +1,13 @@
-COBJS ?= client.o bmp.o couleur.o
-SOBJS ?= serveur.o 
+CC = gcc
+CFLAGS = -Wall -Wextra
 
-.SUFFIXES: .c .o
+all: serveur client
 
-SERVER = serveur
-CLIENT = client
+serveur: serveur.c
+	$(CC) $(CFLAGS) -o serveur serveur.c
 
-all: $(SERVER) $(CLIENT)
+client: client.c bmp.c couleur.c
+	$(CC) $(CFLAGS) -o client client.c bmp.c couleur.c
 
-$(SERVER): $(SOBJS)
-	gcc -o $(SERVER) $(SOBJS) -lm
-
-$(CLIENT): $(COBJS)
-	gcc -o $(CLIENT) $(COBJS)
-
-.c.o: 
-	gcc -Wall -Werror -ggdb3 -c $*.c
-
+clean:
+	rm -f serveur client resultat.svg

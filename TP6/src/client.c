@@ -1,157 +1,66 @@
-/*
- * SPDX-FileCopyrightText: 2021 John Samuel
- *
- * SPDX-License-Identifier: GPL-3.0-or-later
- *
- */
-
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-
 #include "client.h"
 #include "bmp.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 
-/*
- * Fonction d'envoi et de réception de messages
- * Il faut un argument : l'identifiant de la socket
- */
+#define BUFFER_SIZE 4096
 
-int envoie_recois_message(int socketfd)
-{
-
-  char data[1024];
-  // la réinitialisation de l'ensemble des données
-  memset(data, 0, sizeof(data));
-
-  // Demandez à l'utilisateur d'entrer un message
-  char message[1024];
-  printf("Votre message (max 1000 caracteres): ");
-  fgets(message, sizeof(message), stdin);
-  strcpy(data, "message: ");
-  strcat(data, message);
-
-  int write_status = write(socketfd, data, strlen(data));
-  if (write_status < 0)
-  {
-    perror("erreur ecriture");
-    exit(EXIT_FAILURE);
-  }
-
-  // la réinitialisation de l'ensemble des données
-  memset(data, 0, sizeof(data));
-
-  // lire les données de la socket
-  int read_status = read(socketfd, data, sizeof(data));
-  if (read_status < 0)
-  {
-    perror("erreur lecture");
-    return -1;
-  }
-
-  printf("Message recu: %s\n", data);
-
-  return 0;
-}
-
-void analyse(char *pathname, char *data)
-{
-  // compte de couleurs
-  couleur_compteur *cc = analyse_bmp_image(pathname);
-
-  int count;
-  strcpy(data, "couleurs: ");
-  char temp_string[10] = "10,";
-  if (cc->size < 10)
-  {
-    sprintf(temp_string, "%d,", cc->size);
-  }
-  strcat(data, temp_string);
-
-  // choisir 10 couleurs
-  for (count = 1; count < 11 && cc->size - count > 0; count++)
-  {
-    if (cc->compte_bit == BITS32)
-    {
-      sprintf(temp_string, "#%02x%02x%02x,", cc->cc.cc24[cc->size - count].c.rouge, cc->cc.cc32[cc->size - count].c.vert, cc->cc.cc32[cc->size - count].c.bleu);
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Utilisation : %s <chemin_image_bmp> [nb_couleurs (max 30)]\n", argv[0]);
+        return 1;
     }
-    if (cc->compte_bit == BITS24)
-    {
-      sprintf(temp_string, "#%02x%02x%02x,", cc->cc.cc32[cc->size - count].c.rouge, cc->cc.cc32[cc->size - count].c.vert, cc->cc.cc32[cc->size - count].c.bleu);
+
+    int nb_demande = 10; // Valeur par défaut de l'exercice 6.1
+    if (argc >= 3) {
+        nb_demande = atoi(argv[2]);
+        if (nb_demande <= 0 || nb_demande > 30) {
+            printf("Le nombre de couleurs doit être compris entre 1 et 30. Valeur par défaut fixée à 10.\n");
+            nb_demande = 10;
+        }
     }
-    strcat(data, temp_string);
-  }
 
-  // enlever le dernier virgule
-  data[strlen(data) - 1] = '\0';
-}
+    struct Couleur tab_couleurs[30];
+    int nb_recuperees = lire_couleurs_bmp(argv[1], tab_couleurs, nb_demande);
+    if (nb_recuperees <= 0) {
+        printf("Impossible d'extraire les couleurs du fichier %s\n", argv[1]);
+        return 1;
+    }
 
-int envoie_couleurs(int socketfd, char *pathname)
-{
-  char data[1024];
-  memset(data, 0, sizeof(data));
-  analyse(pathname, data);
+    // Formatage du message au format JSON (Exercice 6.3)
+    char json_buffer[BUFFER_SIZE];
+    int offset = snprintf(json_buffer, sizeof(json_buffer), "{\n  \"code\": \"couleurs\",\n  \"valeurs\": [");
 
-  int write_status = write(socketfd, data, strlen(data));
-  if (write_status < 0)
-  {
-    perror("erreur ecriture");
-    exit(EXIT_FAILURE);
-  }
+    for (int i = 0; i < nb_recuperees; i++) {
+        char separateur = (i == nb_recuperees - 1) ? ' ' : ',';
+        offset += snprintf(json_buffer + offset, sizeof(json_buffer) - offset,
+                           "\"#%02x%02x%02x\"%c",
+                           tab_couleurs[i].r, tab_couleurs[i].g, tab_couleurs[i].b, separateur);
+    }
+    snprintf(json_buffer + offset, sizeof(json_buffer) - offset, "]\n}");
 
-  return 0;
-}
+    // Connexion réseau
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(PORT);
+    inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr);
 
-int main(int argc, char **argv)
-{
-  int socketfd;
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("Erreur de connexion au serveur");
+        return 1;
+    }
 
-  struct sockaddr_in server_addr;
+    write(sock, json_buffer, strlen(json_buffer));
 
-  if (argc < 2)
-  {
-    printf("usage: ./client chemin_bmp_image\n");
-    return (EXIT_FAILURE);
-  }
+    char reponse[BUFFER_SIZE];
+    memset(reponse, 0, sizeof(reponse));
+    read(sock, reponse, sizeof(reponse) - 1);
+    printf("Réponse serveur : %s\n", reponse);
 
-  /*
-   * Creation d'une socket
-   */
-  socketfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (socketfd < 0)
-  {
-    perror("socket");
-    exit(EXIT_FAILURE);
-  }
-
-  // détails du serveur (adresse et port)
-  memset(&server_addr, 0, sizeof(server_addr));
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(PORT);
-  server_addr.sin_addr.s_addr = INADDR_ANY;
-
-  // demande de connection au serveur
-  int connect_status = connect(socketfd, (struct sockaddr *)&server_addr, sizeof(server_addr));
-  if (connect_status < 0)
-  {
-    perror("connection serveur");
-    exit(EXIT_FAILURE);
-  }
-  if (argc != 2)
-  {
-    // envoyer et recevoir un message
-    envoie_recois_message(socketfd);
-  }
-  else
-  {
-    // envoyer et recevoir les couleurs prédominantes
-    // d'une image au format BMP (argv[1])
-    envoie_couleurs(socketfd, argv[1]);
-  }
-
-  close(socketfd);
+    close(sock);
+    return 0;
 }

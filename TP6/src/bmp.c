@@ -1,108 +1,61 @@
-/*
- * SPDX-FileCopyrightText: 2021 John Samuel
- *
- * SPDX-License-Identifier: GPL-3.0-or-later
- *
- */
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
+#include "bmp.h"
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "bmp.h"
+#pragma pack(push, 1)
+struct BMPHeader {
+    unsigned short type;
+    unsigned int taille_fichier;
+    unsigned short reserve1;
+    unsigned short reserve2;
+    unsigned int offset_donnees;
+    unsigned int taille_entete_info;
+    int largeur;
+    int hauteur;
+    unsigned short plans;
+    unsigned short bpp; // Bits par pixel (24 ou 32)
+    unsigned int compression;
+};
+#pragma pack(pop)
 
-/*
- * fonction d'analyse des couleurs dans l'image du format BMP
- * Il faut un argument : le chemin du fichier image
- */
-couleur_compteur *analyse_bmp_image(char *nom_de_fichier)
-{
-
-  couleur_compteur *cc = NULL;
-
-  // l'ouverture du fichier pour la lecture
-  int fd = open(nom_de_fichier, O_RDONLY);
-  printf("%s", nom_de_fichier);
-  if (fd < 0)
-  {
-    perror("Erreur: open");
-    return 0;
-  }
-
-  bmp_header bheader;
-  bmp_info_header binfo_header;
-
-  // la lecture de l'en-tête du fichier pour en connaître la taille et le type
-  ssize_t compte = read(fd, &bheader, sizeof(bheader));
-  if (compte < 0)
-  {
-    perror("Erreur: read");
-    return (NULL);
-  }
-
-  // Vérifier l'en-tête pour voir si le fichier est une image de format BMP
-  if (bheader.type != 0x4D42)
-  {
-    return (NULL);
-  }
-
-  /* Obtenir l'information indiquant si l'image utilise 3 (RGB) ou 4 (RGBA)
-   * octets pour stocker une seule couleur
-   */
-  compte = read(fd, &binfo_header, sizeof(binfo_header));
-  if (compte < 0)
-  {
-    perror("Erreur: read");
-    return (NULL);
-  }
-
-  // Se positionner correctement pour commencer à lire les couleurs
-  off_t offset = lseek(fd, bheader.offset, SEEK_SET);
-  if (offset != bheader.offset)
-  {
-    perror("Erreur: lseek");
-    return (NULL);
-  }
-
-  // Lecture des couleurs de 4 octets
-  if (binfo_header.compte_bit == 32)
-  {
-    couleur32 *c32 = calloc(binfo_header.taille_image / 4, 4);
-    read(fd, c32, binfo_header.taille_image);
-    if (compte < 0)
-    {
-      perror("Erreur: read");
-      return (NULL);
+int lire_couleurs_bmp(const char *chemin_fichier, struct Couleur *couleurs, int max_couleurs) {
+    FILE *f = fopen(chemin_fichier, "rb");
+    if (!f) {
+        perror("fopen BMP");
+        return -1;
     }
 
-    couleur c;
-    c.compte_bit = BITS32;
-    c.c.c32 = c32;
-    cc = compte_couleur(&c, binfo_header.taille_image / 4);
-    trier_couleur_compteur(cc);
-  }
-  else if (binfo_header.compte_bit == 24)
-  {
-    // Lecture des couleurs de 3 octets
-    couleur24 *c24 = calloc(binfo_header.taille_image / 3, 3);
-    read(fd, c24, binfo_header.taille_image);
-    if (compte < 0)
-    {
-      perror("Erreur: read");
-      return (NULL);
+    struct BMPHeader header;
+    if (fread(&header, sizeof(struct BMPHeader), 1, f) != 1) {
+        fclose(f);
+        return -1;
     }
 
-    couleur c;
-    c.compte_bit = BITS24;
-    c.c.c24 = c24;
-    cc = compte_couleur(&c, binfo_header.taille_image / 3);
-    trier_couleur_compteur(cc);
-  }
+    if (header.type != 0x4D42) { // "BM"
+        printf("Erreur : le fichier n'est pas un BMP valide.\n");
+        fclose(f);
+        return -1;
+    }
 
-  close(fd);
+    fseek(f, header.offset_donnees, SEEK_SET);
 
-  return cc;
+    int count = 0;
+    int bytes_per_pixel = header.bpp / 8;
+
+    while (count < max_couleurs) {
+        unsigned char buffer[4];
+        if (fread(buffer, 1, bytes_per_pixel, f) != (size_t)bytes_per_pixel) {
+            break;
+        }
+
+        // Dans un fichier BMP, l'ordre des canaux est B, G, R, (A)
+        couleurs[count].b = buffer[0];
+        couleurs[count].g = buffer[1];
+        couleurs[count].r = buffer[2];
+        couleurs[count].a = (bytes_per_pixel == 4) ? buffer[3] : 0xFF;
+        count++;
+    }
+
+    fclose(f);
+    return count;
 }
