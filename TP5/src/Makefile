@@ -1,23 +1,16 @@
-CC ?= gcc
+CC = gcc
+CFLAGS = -Wall -Wextra
 
-CFLAGS=-Wall -Wextra -g
+all: repertoire serveur client
 
-COBJS ?= client.o
-SOBJS ?= serveur.o 
+repertoire: repertoire.c main.c
+	$(CC) $(CFLAGS) -o repertoire repertoire.c main.c
 
-.SUFFIXES: .c .o
+serveur: serveur.c
+	$(CC) $(CFLAGS) -o serveur serveur.c
 
-SERVER = serveur
-CLIENT = client
+client: client.c
+	$(CC) $(CFLAGS) -o client client.c
 
-all: $(SERVER) $(CLIENT)
-
-$(SERVER): $(SOBJS)
-	$(CC) -o $(SERVER) $(SOBJS)
-
-$(CLIENT): $(COBJS)
-	$(CC) -o $(CLIENT) $(COBJS)
-
-.c.o: 
-	$(CC) -c $*.c
-
+clean:
+	rm -f repertoire serveur client
